@@ -1,75 +1,93 @@
-# React + TypeScript + Vite
+# TabStash
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+TabStash is a Manifest V3 Chrome extension that saves the user's open tabs into named "stashes", closes those tabs to free RAM, and lets the user restore a stash later on any device signed in to Chrome. 
 
-Currently, two official plugins are available:
+**Zero backend, no accounts, no analytics, no network calls.**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
+- **Cross-device Sync:** Uses `chrome.storage.sync` to sync stashes across devices.
+- **Smart Quota Management:** Automatically batches writes and chunks data to respect Chrome's strict 8KB per item and 120 writes/min limits.
+- **Graceful Fallback:** Falls back to `chrome.storage.local` if sync storage is full or rate-limited.
+- **Native Tab Groups:** Preserves Chrome's native colored tab groups (title, color, collapsed state).
+- **RAM Optimization:** Safely closes tabs only *after* a successful save is confirmed.
 
-## React Compiler
+## Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+TabStash separates UI rendering, tab manipulation, and storage management into distinct layers to ensure safe operations and strict type safety.
 
-## Expanding the ESLint configuration
+```mermaid
+graph TD
+    subgraph UI Layer ["UI Layer (/src/ui)"]
+        P[Popup<br/>380x560]
+        M[Manager Page<br/>Full Tab Grid]
+    end
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+    subgraph Core Logic
+        T[Tab Controller<br/>/src/tabs]
+        S[Storage Manager<br/>/src/storage]
+    end
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+    subgraph Chrome Extensions API
+        CT[chrome.tabs &<br/>chrome.tabGroups]
+        CS[chrome.storage<br/>Sync & Local]
+        SW[Background<br/>Service Worker]
+    end
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+    P -->|User triggers save/restore| T
+    M -->|User manages stashes| T
+    
+    T -->|Read/Write requests| S
+    S -->|1. Validate chunks < 7000B<br/>2. Batch writes| CS
+    
+    T -->|Query / Close / Create| CT
+    
+    SW -->|Context Menus| T
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+## Data Model
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+To bypass `chrome.storage.sync` limitations (100KB total, 8KB per item), TabStash uses an Index-Chunk model.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+*   **Index (`index`):** Stores metadata for all stashes (`id`, `name`, `createdAt`, `tabCount`, `store`, `chunks`).
+*   **Chunks (`s_<id>_<n>`):** JSON arrays of tab records. Each chunk is strictly kept under 7000 bytes (measured via `TextEncoder`).
+*   **Tab Records:** Highly minified keys to save space:
+    `{ u: url, t: title, p: pinned, g: groupId }`.
+*   **Group Records:** Stored in chunk `0` containing group metadata
+    `{ i, title, color, collapsed }`.
 
-```
+*Note: Favicons are not stored. They are rendered natively using Chrome's internal `_favicon` API.*
+
+## Development Setup
+
+### Prerequisites
+
+*   Node.js 18+
+*   npm or pnpm
+
+### Installation
+
+1.  Clone the repository:
+
+    ```bash
+    git clone [https://github.com/yourusername/tabstash.git](https://github.com/yourusername/tabstash.git)
+    cd tabstash
+    ```
+
+2.  Install dependencies:
+
+    ```bash
+    npm install
+    ```
+
+3.  Start the development server (with HMR):
+
+    ```bash
+    npm run dev
+    ```
+
+### Loading the Extension in Chrome
+
+1.  Open Chrome and navigate to `chrome://extensions/`.
+2.  Enable **Developer mode** in the top right corner.
+3.  Click **Load unpacked** and select the `dist` folder generated by the dev script.
+4.  The extension will automatically reload when you save files in your IDE.
