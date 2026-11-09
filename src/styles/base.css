@@ -1,14 +1,5 @@
-:root {
-  --color-page: #f3f3f2;
-  --color-text: #1c1c1b;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-page: #1a1a19;
-    --color-text: #ecece9;
-  }
-}
+/* @import './tokens.css';
+@import './components.css'; */
 
 body {
   margin: 0;
@@ -18,7 +9,7 @@ body {
   color: var(--color-text);
 }
 
-/* Strict popup dimensions as requested */
+/* Strict popup dimensions */
 body.popup-body {
   width: 380px;
   height: 560px;

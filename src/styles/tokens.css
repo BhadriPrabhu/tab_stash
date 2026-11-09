@@ -1,0 +1,65 @@
+:root {
+  /* STRICTLY LIGHT MODE ONLY */
+  color-scheme: light;
+  
+  /* LIGHT PALETTE (Warm Paper) */
+  --color-page: #f6f3ec;
+  --color-card: #fffdf9;
+  --color-card-footer: #fffdf9;
+  
+  --color-border: #e4ded1;
+  --color-border-strong: #cfc7b6;
+  
+  --color-text: #22201c;
+  --color-muted: #6b665c;
+  
+  /* ACCENT (Teal) */
+  --color-accent: #0e7a73;
+  --color-accent-hover: #0b655f;
+  --color-accent-pressed: #095550;
+  --color-accent-tint: #dcefec;
+  --color-accent-text: #ffffff;
+  
+  --color-danger: #b3372f;
+  --color-danger-tint: #f8e3e0;
+  
+  /* INPUTS & STATES */
+  --color-input-bg: #ffffff;
+  --color-row-hover: #f4f0e6;
+  --color-btn-disabled-bg: #d9d4c7;
+  --focus-ring: 0 0 0 2px rgba(14, 122, 115, 0.25);
+  --shadow-card-hover: 0 2px 6px rgba(34, 32, 28, 0.08);
+
+  /* CHROME TAB GROUP COLORS */
+  --group-blue: #3a6fd8;
+  --group-blue-tint: rgba(58, 111, 216, 0.14);
+  --group-blue-border: rgba(58, 111, 216, 0.25);
+  
+  --group-red: #d4453c;
+  --group-red-tint: rgba(212, 69, 60, 0.14);
+  --group-red-border: rgba(212, 69, 60, 0.25);
+  
+  --group-yellow: #d9a21f;
+  --group-yellow-tint: rgba(217, 162, 31, 0.14);
+  --group-yellow-border: rgba(217, 162, 31, 0.25);
+  
+  --group-green: #3a9a5b;
+  --group-green-tint: rgba(58, 154, 91, 0.14);
+  --group-green-border: rgba(58, 154, 91, 0.25);
+  
+  --group-pink: #d6568a;
+  --group-pink-tint: rgba(214, 86, 138, 0.14);
+  --group-pink-border: rgba(214, 86, 138, 0.25);
+  
+  --group-cyan: #1b9fb5;
+  --group-cyan-tint: rgba(27, 159, 181, 0.14);
+  --group-cyan-border: rgba(27, 159, 181, 0.25);
+  
+  --group-orange: #df7a2a;
+  --group-orange-tint: rgba(223, 122, 42, 0.14);
+  --group-orange-border: rgba(223, 122, 42, 0.25);
+  
+  --group-grey: #7b8088;
+  --group-grey-tint: rgba(123, 128, 136, 0.14);
+  --group-grey-border: rgba(123, 128, 136, 0.25);
+}
