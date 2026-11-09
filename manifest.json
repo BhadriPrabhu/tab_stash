@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "TabStash",
+  "version": "1.0.0",
+  "description": "Save open tabs into named stashes to free RAM.",
+  "action": {
+    "default_popup": "index.html"
+  },
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "unlimitedStorage",
+    "favicon",
+    "contextMenus"
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
