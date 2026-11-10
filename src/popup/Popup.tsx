@@ -1,112 +1,288 @@
-import { useState, MouseEvent } from 'react';
-import { Button, TextInput } from '../ui/components';
-import { MOCK_TABS, MOCK_STASHES } from '../ui/mockData';
+import React, { useState, useEffect, MouseEvent } from 'react';
+import { captureWindow, closeTabsSafely, restoreStash } from '../tabs';
+import { saveStash, loadIndex, getNextDefaultName, setGroupColor } from '../storage';
+import { StashIndexEntry, TabRecord, TabColor } from '../storage/types';
+import { TriStateCheckbox, plural } from '../ui/components';
+import '../styles/components.css';
+
+function formatUrl(url: string) {
+    let clean = url.replace(/^https?:\/\//, '').replace(/^www\./, '');
+    if (clean.endsWith('/')) clean = clean.slice(0, -1);
+    return clean;
+}
+
+const COLORS: TabColor[] = ["blue", "red", "yellow", "green", "pink", "cyan", "orange", "grey"];
 
 export default function Popup() {
+  const [stashes, setStashes] = useState<StashIndexEntry[]>([]);
+  const [windowTabs, setWindowTabs] = useState<TabRecord[]>([]);
+  const [tabIds, setTabIds] = useState<number[]>([]);
+  const [selectedTabs, setSelectedTabs] = useState<Set<number>>(new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  
   const [saveTarget, setSaveTarget] = useState('new');
   const [newGroupName, setNewGroupName] = useState('');
-  const [selectedTabs, setSelectedTabs] = useState<Set<string>>(new Set(MOCK_TABS.map(t => t.id)));
-  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [newGroupColor, setNewGroupColor] = useState<TabColor>('grey');
+  const [closeAfter, setCloseAfter] = useState(true);
+  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
-  const handleCheck = (e: MouseEvent<HTMLInputElement>, index: number, id: string) => {
+  useEffect(() => {
+    async function init() {
+      try {
+        const [index, capture] = await Promise.all([
+          loadIndex(),
+          captureWindow()
+        ]);
+        
+        const sortedStashes = index.stashes
+          .filter(s => !s.deleted)
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+        
+        setStashes(sortedStashes);
+        setWindowTabs(capture.tabs);
+        setTabIds(capture.tabIdsToClose);
+        setSelectedTabs(new Set(capture.tabs.map((_, i) => i)));
+
+        const usedColors = new Set(sortedStashes.map(s => s.color).filter(Boolean));
+        const nextColor = COLORS.find(c => !usedColors.has(c)) || 'grey';
+        setNewGroupColor(nextColor);
+      } catch (err: any) {
+        setError(err.message || 'Failed to load popup data.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
+  }, []);
+
+  const handleCheck = (e: MouseEvent<HTMLInputElement>, index: number) => {
     const newSelected = new Set(selectedTabs);
     
     if (e.shiftKey && lastSelectedIndex !== null) {
       const start = Math.min(lastSelectedIndex, index);
       const end = Math.max(lastSelectedIndex, index);
-      const isChecking = !selectedTabs.has(id);
+      const isChecking = !selectedTabs.has(index);
       
       for (let i = start; i <= end; i++) {
-        if (isChecking) newSelected.add(MOCK_TABS[i].id);
-        else newSelected.delete(MOCK_TABS[i].id);
+        if (isChecking) newSelected.add(i);
+        else newSelected.delete(i);
       }
     } else {
-      if (newSelected.has(id)) newSelected.delete(id);
-      else newSelected.add(id);
+      if (newSelected.has(index)) newSelected.delete(index);
+      else newSelected.add(index);
       setLastSelectedIndex(index);
     }
     setSelectedTabs(newSelected);
   };
 
-  const selectAll = () => setSelectedTabs(new Set(MOCK_TABS.map(t => t.id)));
-  const selectNone = () => setSelectedTabs(new Set());
+  const handleSave = async () => {
+    if (selectedTabs.size === 0) return;
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const targetTabs = windowTabs.filter((_, i) => selectedTabs.has(i));
+      const targetTabIds = tabIds.filter((_, i) => selectedTabs.has(i));
+      const capture = await captureWindow();
+      
+      const targetId = saveTarget === 'new' ? undefined : saveTarget;
+      
+      let targetName = 'New group';
+      if (saveTarget === 'new') {
+         targetName = newGroupName.trim() ? newGroupName : await getNextDefaultName();
+      } else {
+         targetName = stashes.find(s => s.id === saveTarget)?.name || 'Updated Group';
+      }
+      
+      const savedId = await saveStash(targetName, targetTabs, capture.groups, targetId);
+      if (saveTarget === 'new') {
+          await setGroupColor(savedId, newGroupColor);
+      }
+      
+      const newIndex = await loadIndex();
+      const updatedEntry = newIndex.stashes.find(s => s.id === savedId);
+      if (updatedEntry?.store === 'local') {
+        setSaveNotice('Saved on this computer only. Sync storage is full.');
+        setTimeout(() => setSaveNotice(null), 5000);
+      }
+
+      if (closeAfter) {
+        await closeTabsSafely(targetTabIds);
+      }
+      
+      const sortedStashes = newIndex.stashes.filter(s => !s.deleted).sort((a, b) => b.updatedAt - a.updatedAt);
+      setStashes(sortedStashes);
+      setNewGroupName('');
+      setSaveTarget('new');
+
+      const usedColors = new Set(sortedStashes.map(s => s.color).filter(Boolean));
+      const nextColor = COLORS.find(c => !usedColors.has(c)) || 'grey';
+      setNewGroupColor(nextColor);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save tabs.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading && windowTabs.length === 0) {
+    return <div style={{ padding: '16px', color: 'var(--color-muted)' }}>Loading tabs...</div>;
+  }
+
+  const displayColor = saveTarget === 'new' ? newGroupColor : (stashes.find(s => s.id === saveTarget)?.color || 'grey');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}>
-      
-      {/* Top: Save Target */}
-      <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <select 
-          className="select-input" 
-          value={saveTarget} 
-          onChange={(e) => setSaveTarget(e.target.value)}
-        >
-          <option value="new">New group...</option>
-          {MOCK_STASHES.map(g => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
+    <>
+      <header className="popup-header" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="var(--color-accent)"><rect x="2" y="2" width="12" height="4" rx="2"/><rect x="2" y="7" width="10" height="4" rx="2"/><rect x="2" y="12" width="8" height="4" rx="2"/></svg>
+          <span style={{ fontSize: '15px', fontWeight: 600 }}>TabStash</span>
+        </div>
+        <a href="/manager.html" target="_blank" className="text-link">Open manager</a>
+      </header>
+
+      <div className="popup-saveto" style={{ padding: '0 16px 12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {error && <div style={{ color: 'var(--color-danger)', fontSize: '13px' }}>{error}</div>}
+        {saveNotice && <div style={{ color: 'var(--color-muted)', fontSize: '12px', background: 'var(--color-card)', padding: '8px', border: '1px solid var(--color-border)', borderRadius: '6px' }}>{saveNotice}</div>}
+
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <div style={{ position: 'absolute', left: '12px', width: '10px', height: '10px', borderRadius: '50%', background: `var(--group-${displayColor})`, pointerEvents: 'none' }} />
+          <select className="select-input" value={saveTarget} onChange={(e) => setSaveTarget(e.target.value)} style={{ paddingLeft: '32px' }}>
+            <option value="new">New group...</option>
+            {stashes.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+        
         {saveTarget === 'new' && (
-          <TextInput 
-            placeholder="Name this group" 
-            value={newGroupName} 
-            onChange={(e: any) => setNewGroupName(e.target.value)} 
-          />
+          <div>
+              <input type="text" className="text-input" placeholder="Group name" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
+              <div style={{ display: 'flex', gap: '8px', paddingLeft: '2px', marginTop: '8px' }}>
+                  {COLORS.map(c => (
+                      <button 
+                          key={c}
+                          onClick={() => setNewGroupColor(c)}
+                          style={{
+                              width: '16px', height: '16px', borderRadius: '50%', background: `var(--group-${c})`,
+                              border: 'none', cursor: 'pointer', padding: 0,
+                              boxShadow: newGroupColor === c ? '0 0 0 2px var(--color-page), 0 0 0 4px var(--color-text)' : 'none'
+                          }}
+                      />
+                  ))}
+              </div>
+          </div>
         )}
       </div>
 
-      {/* List Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="text-link" onClick={selectAll}>Select all</button>
-          <button className="text-link" onClick={selectNone}>Select none</button>
+      <div className="popup-toolbar" style={{
+        height: '36px',
+        borderBottom: '1px solid var(--color-border)',
+        borderTop: '1px solid var(--color-border)',
+        background: 'var(--color-card)',
+        padding: '0 12px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <TriStateCheckbox
+          checked={selectedTabs.size === windowTabs.length && windowTabs.length > 0}
+          indeterminate={selectedTabs.size > 0 && selectedTabs.size < windowTabs.length}
+          onChange={() => {
+            if (selectedTabs.size > 0 && selectedTabs.size < windowTabs.length) {
+              setSelectedTabs(new Set(windowTabs.map((_, i) => i)));
+            } else if (selectedTabs.size === windowTabs.length) {
+              setSelectedTabs(new Set());
+            } else {
+              setSelectedTabs(new Set(windowTabs.map((_, i) => i)));
+            }
+          }}
+          label="Select all"
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="text-muted" style={{ fontSize: '12px' }}>
+            {selectedTabs.size} of {plural(windowTabs.length, 'tab')} selected
+          </span>
+          {selectedTabs.size > 0 && (
+            <button
+              onClick={() => setSelectedTabs(new Set())}
+              className="btn-clear"
+              style={{
+                fontSize: '12px', fontWeight: 500, color: 'var(--color-accent)',
+                background: 'transparent', border: 'none', padding: '3px 8px',
+                borderRadius: '4px', cursor: 'pointer', transition: 'background-color 120ms ease'
+              }}
+              onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--color-accent-soft)'}
+              onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              Clear
+            </button>
+          )}
         </div>
-        <span className="text-muted" style={{ fontSize: '12px' }}>
-          {selectedTabs.size} of {MOCK_TABS.length} selected
-        </span>
       </div>
 
-      {/* Scrollable Tab List */}
-      <div style={{ flex: 1, overflowY: 'auto', margin: '0 -16px', padding: '0 16px', borderTop: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' }}>
-        {MOCK_TABS.map((tab, index) => {
-          const isSelected = selectedTabs.has(tab.id);
-          const faviconUrl = `https://www.google.com/s2/favicons?domain=${tab.domain}&sz=32`;
-          return (
-            <label key={tab.id} className="tab-list-row">
-              <input 
-                type="checkbox" 
-                className="tab-checkbox"
-                checked={isSelected}
-                onClick={(e) => handleCheck(e, index, tab.id)}
-                readOnly
-              />
-              <img src={faviconUrl} alt="" style={{ width: '16px', height: '16px' }} />
-              <div className="tab-list-content">
-                <div className="tab-list-title">{tab.title}</div>
-                <div className="tab-list-domain">{tab.domain}</div>
-              </div>
-            </label>
-          );
-        })}
+      <div className="popup-list" style={{ padding: '0 16px' }}>
+        {windowTabs.length === 0 ? (
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--color-muted)', fontSize: '13px' }}>
+            No tabs to save in this window.
+          </div>
+        ) : (
+          windowTabs.map((tab, index) => {
+            const isSelected = selectedTabs.has(index);
+            const faviconUrl = `chrome-extension://${chrome.runtime.id}/_favicon/?pageUrl=${encodeURIComponent(tab.u)}&size=32`;
+            let hostname = '';
+            try { hostname = new URL(tab.u).hostname; } catch (e) {}
+            const isGithub = hostname === 'github.com' || hostname.endsWith('.github.com');
+            
+            return (
+              <label key={index} className={`tab-list-row ${isSelected ? 'selected' : ''}`} style={{ borderLeft: isSelected ? '3px solid var(--color-accent)' : '3px solid transparent', marginLeft: '-16px', marginRight: '-16px', paddingLeft: '13px', paddingRight: '16px' }}>
+                <input type="checkbox" className="custom-checkbox" checked={isSelected} onClick={(e) => handleCheck(e, index)} readOnly />
+                <img src={faviconUrl} alt="" className={isGithub ? 'favicon--mono' : ''} style={{ width: '16px', height: '16px' }} />
+                <div className="tab-list-content">
+                  <div className="tab-list-title">{tab.t}</div>
+                  <div className="tab-list-domain">{formatUrl(tab.u)}</div>
+                </div>
+              </label>
+            );
+          })
+        )}
       </div>
 
-      {/* Fixed Bottom */}
-      <div style={{ paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-          <input type="checkbox" defaultChecked className="tab-checkbox" />
+      <div className="popup-footer" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', background: 'var(--color-card)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', margin: 0 }}>
+          <input type="checkbox" className="custom-checkbox" checked={closeAfter} onChange={(e) => setCloseAfter(e.target.checked)} />
           Close saved tabs
         </label>
-        <Button 
-          variant="solid" 
-          style={{ width: '100%' }} 
-          disabled={selectedTabs.size === 0}
-        >
-          {selectedTabs.size === 0 ? 'Save tabs' : `Save ${selectedTabs.size} tabs`}
-        </Button>
-        <div style={{ textAlign: 'center', marginTop: '4px' }}>
-          <a href="/manager.html" target="_blank" className="text-link">Open manager</a>
-        </div>
+        <button className="btn-solid" onClick={handleSave} disabled={selectedTabs.size === 0 || loading}>
+          {loading ? 'Saving...' : `Save ${plural(selectedTabs.size, 'tab')}`}
+        </button>
       </div>
-    </div>
+      
+      {stashes.length > 0 && (
+        <div className="popup-recent" style={{ borderTop: '1px solid var(--color-border)', padding: '12px 16px', background: 'var(--color-page)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--color-muted)', marginBottom: '8px' }}>Recent groups</div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {stashes.slice(0, 2).map(stash => (
+              <div key={stash.id} style={{ height: '36px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0', border: 'none', margin: '0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: `var(--group-${stash.color})` }}></div>
+                  <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>{stash.name}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-muted)' }}>{plural(stash.tabCount, 'tab')}</div>
+                </div>
+                <button className="btn-soft" onClick={() => restoreStash(stash.id, 'current')}>Open</button>
+              </div>
+            ))}
+            {stashes.length > 2 && (
+              <div style={{ marginTop: '8px' }}>
+                <a href="/manager.html" target="_blank" className="text-link" style={{ fontSize: '12px' }}>See all in manager</a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

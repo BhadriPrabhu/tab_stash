@@ -1,6 +1,12 @@
 /* =========================================
    GLOBAL RESETS & TYPOGRAPHY
    ========================================= */
+html, body { margin: 0; }
+body:has(.popup-header) { width: 380px; height: 560px; overflow: hidden; }
+body:has(.popup-header) #root { height: 100%; display: flex; flex-direction: column; }
+.popup-header, .popup-saveto, .popup-toolbar, .popup-footer, .popup-recent { flex: 0 0 auto; }
+.popup-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
@@ -80,22 +86,26 @@ h1, h2, h3, p {
 
 /* SOFT ACCENT BUTTON */
 .btn-soft {
-  background: var(--color-accent-tint);
-  color: var(--color-accent);
-  height: 30px;
-  padding: 0 12px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-soft-text);
+  height: 26px;
+  padding: 0 10px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   border: none;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: filter 0.1s;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
 }
-.btn-soft:hover { filter: brightness(0.95); }
-.btn-soft:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+.btn-soft:hover { background-color: var(--color-accent-tint-hover); }
+.btn-soft:active { transform: translateY(1px); }
+.btn-soft:focus-visible { 
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-page), 0 0 0 4px var(--color-accent);
+}
 
 /* PLAIN TEXT ACTIONS */
 .action-btn {
@@ -194,7 +204,7 @@ h1, h2, h3, p {
 .text-link:hover { text-decoration: underline; }
 
 /* =========================================
-   MANAGER PAGE LAYOUT
+   MANAGER PAGE LAYOUT & CARDS
    ========================================= */
 .manager-header {
   max-width: 1120px;
@@ -212,120 +222,83 @@ h1, h2, h3, p {
 .manager-search {
   width: 260px;
 }
-.manager-grid {
+
+.group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
   max-width: 1120px;
   margin: 0 auto;
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
 }
-@media (min-width: 640px) { .manager-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 960px) { .manager-grid { grid-template-columns: repeat(3, 1fr); } }
-
-/* STASH CARD */
-.stash-card {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-card);
+.group-card {
+  min-width: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
-  position: relative;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
   cursor: pointer;
 }
-.stash-card:hover {
-  border-color: var(--color-border-strong);
+.group-card:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-card-hover);
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 6px rgba(34, 32, 28, .08);
 }
-
-/* Color Bar along top edge */
-.card-color-bar {
-  height: 3px;
-  width: 100%;
-  border-top-left-radius: 7px;
-  border-top-right-radius: 7px;
-  /* Inline style will apply background: var(--group-X) */
-}
-
-/* Card Top Area */
-.card-top {
-  padding: 10px;
+.group-card__preview {
   height: 124px;
-  overflow: hidden; /* strictly prevents scrolling */
+  overflow: hidden;
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* Inline style will apply background: var(--group-X-tint) */
+  background: var(--group-tint);
 }
-.card-top.empty-state {
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 4px;
-}
-
-/* Card Inner Rows */
-.card-site-row {
-  background: var(--color-card);
-  border-width: 1px;
-  border-style: solid;
-  border-radius: 6px;
-  padding: 8px 10px;
+.group-card__footer {
   display: flex;
-  gap: 12px;
   align-items: center;
-  /* Inline style will apply border-color: var(--group-X-border) */
-}
-.card-site-row .site-row-domain {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.card-site-row .site-row-url {
-  font-size: 12px;
-  color: var(--color-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Card Footer */
-.card-bottom {
-  padding: 12px 14px;
-  background: var(--color-card-footer);
-  border-top: 1px solid var(--color-border);
-  border-bottom-left-radius: 7px;
-  border-bottom-right-radius: 7px;
-  display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
 }
-.card-title-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
+.group-card__title {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.card-color-dot {
+
+[data-color="blue"]{--group:#3a6fd8;--group-tint:#e3e9f4}
+[data-color="red"]{--group:#d4453c;--group-tint:#f9e3df}
+[data-color="yellow"]{--group:#d9a21f;--group-tint:#faf0da}
+[data-color="green"]{--group:#3a9a5b;--group-tint:#e3efe3}
+[data-color="pink"]{--group:#d6568a;--group-tint:#f9e6e9}
+[data-color="cyan"]{--group:#1b9fb5;--group-tint:#dff0ef}
+[data-color="orange"]{--group:#df7a2a;--group-tint:#fbebdc}
+[data-color="grey"]{--group:#7b8088;--group-tint:#ecebe9}
+
+.group-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  /* background: var(--group); */
+}
+.group-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  background: var(--group);
   flex-shrink: 0;
 }
-.card-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text);
-}
-.card-count {
-  font-size: 12px;
-  color: var(--color-muted);
-  /* Indent to align text under the title, skipping the 10px dot + 8px gap */
-  padding-left: 18px; 
+
+.group-card__preview .site-row {
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--group) 22%, #fff);
 }
 
 /* =========================================
@@ -369,6 +342,10 @@ h1, h2, h3, p {
   flex-shrink: 0; 
 }
 
+.favicon--mono {
+  filter: brightness(0);
+}
+
 /* Detail View Row Actions */
 .site-row-actions {
   display: none;
@@ -383,17 +360,6 @@ h1, h2, h3, p {
 .site-row:focus-within .site-row-actions { 
   display: flex; 
 }
-.action-btn {
-  background: none;
-  border: none;
-  font-size: 12px;
-  color: var(--color-muted);
-  cursor: pointer;
-  padding: 2px 4px;
-  white-space: nowrap;
-}
-.action-btn:hover { color: var(--color-text); }
-.action-btn.danger:hover { color: var(--color-danger); }
 
 /* =========================================
    POPUP TAB LIST

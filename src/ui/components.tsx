@@ -1,4 +1,5 @@
 import '../styles/components.css';
+import React, { useState } from 'react';
 
 export function Button({ variant = 'solid', children, onClick, className = '', disabled }: any) {
   const btnClass = variant === 'solid' ? 'btn-solid' : variant === 'soft' ? 'btn-soft' : 'action-btn';
@@ -75,5 +76,61 @@ export function GroupCard({ group }: { group: any }) {
         )}
       </div>
     </div>
+  );
+}
+
+export function plural(n: number, word: string) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+export function Favicon({ url, size = 16 }: { url: string, size?: number }) {
+  const [error, setError] = useState(false);
+  const faviconUrl = `chrome-extension://${chrome.runtime.id}/_favicon/?pageUrl=${encodeURIComponent(url)}&size=32`;
+
+  if (error) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--color-muted)' }}>
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+      </svg>
+    );
+  }
+
+  let hostname = '';
+  try { hostname = new URL(url).hostname; } catch (e) {}
+  const isGithub = hostname === 'github.com' || hostname.endsWith('.github.com');
+  const imgClass = isGithub ? "site-row-favicon favicon--mono" : "site-row-favicon";
+
+  return (
+    <img
+      src={faviconUrl}
+      alt=""
+      width={size}
+      height={size}
+      className={imgClass}
+      style={{ width: size, height: size, flexShrink: 0, display: 'block' }}
+      onError={() => setError(true)}
+    />
+  );
+}
+
+export function TriStateCheckbox({ checked, indeterminate, onChange, label }: any) {
+  const ref = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0 }}>
+      <input
+        ref={ref}
+        type="checkbox"
+        className="custom-checkbox"
+        checked={checked}
+        onChange={onChange}
+      />
+      <span style={{ fontSize: '13px', fontWeight: 500 }}>{label}</span>
+    </label>
   );
 }
