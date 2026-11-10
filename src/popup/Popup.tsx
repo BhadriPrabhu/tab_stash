@@ -1,6 +1,6 @@
 import { useState, useEffect, MouseEvent } from 'react';
 import { captureWindow, closeTabsSafely, restoreStash } from '../tabs';
-import { saveStash, loadIndex, getNextDefaultName, setGroupColor } from '../storage';
+import { createGroupWithTabs, addTabsToGroup, loadIndex, getNextDefaultName } from '../storage';
 import { StashIndexEntry, TabRecord, TabColor } from '../storage/types';
 import { TriStateCheckbox, plural, ColorMenu, Wordmark } from '../ui/components';
 import '@fontsource-variable/bricolage-grotesque';
@@ -83,33 +83,47 @@ export default function Popup() {
       const targetTabIds = tabIds.filter((_, i) => selectedTabs.has(i));
       const capture = await captureWindow();
       
-      const targetId = saveTarget === 'new' ? undefined : saveTarget;
+      let addedCount = 0;
+      let duplicateCount = 0;
+      let targetNameDisplay = 'New group';
       
-      let targetName = 'New group';
       if (saveTarget === 'new') {
-         targetName = newGroupName.trim() ? newGroupName : await getNextDefaultName();
+         targetNameDisplay = newGroupName.trim() ? newGroupName : await getNextDefaultName();
+         await createGroupWithTabs(targetNameDisplay, targetTabs, capture.groups, newGroupColor);
+         addedCount = targetTabs.length;
       } else {
-         targetName = stashes.find(s => s.id === saveTarget)?.name || 'Updated Group';
-      }
-      
-      const savedId = await saveStash(targetName, targetTabs, capture.groups, targetId);
-      if (saveTarget === 'new') {
-          await setGroupColor(savedId, newGroupColor);
+         targetNameDisplay = stashes.find(s => s.id === saveTarget)?.name || 'Updated Group';
+         const res = await addTabsToGroup(saveTarget, targetTabs);
+         addedCount = res.added;
+         duplicateCount = res.duplicates;
       }
       
       const newIndex = await loadIndex();
-      const updatedEntry = newIndex.stashes.find(s => s.id === savedId);
+      const updatedEntry = newIndex.stashes.find(s => s.name === targetNameDisplay && !s.deleted);
       if (updatedEntry?.store === 'local') {
         setSaveNotice('Saved on this computer only. Sync storage is full.');
         setTimeout(() => setSaveNotice(null), 5000);
       }
 
-      if (closeAfter) {
+      // Close tabs only if check passed and tabs were actually processed
+      if (closeAfter && (addedCount > 0 || duplicateCount > 0)) {
         await closeTabsSafely(targetTabIds);
       }
       
       const sortedStashes = newIndex.stashes.filter(s => !s.deleted).sort((a, b) => b.updatedAt - a.updatedAt);
       setStashes(sortedStashes);
+      
+      if (saveTarget !== 'new' && addedCount === 0 && duplicateCount > 0) {
+          setSaveNotice(`All selected tabs are already in ${targetNameDisplay}`);
+          setTimeout(() => setSaveNotice(null), 5000);
+      } else if (saveTarget !== 'new' && addedCount > 0 && duplicateCount > 0) {
+          setSaveNotice(`${addedCount} saved, ${duplicateCount} already in ${targetNameDisplay}`);
+          setTimeout(() => setSaveNotice(null), 5000);
+      } else {
+          setSaveNotice(`${plural(addedCount, 'tab')} saved to ${targetNameDisplay}`);
+          setTimeout(() => setSaveNotice(null), 5000);
+      }
+
       setNewGroupName('');
       setSaveTarget('new');
 
