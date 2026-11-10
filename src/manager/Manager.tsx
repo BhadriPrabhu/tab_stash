@@ -3,7 +3,7 @@ import { loadIndex, loadStash, deleteStash, renameStash, saveStash, setGroupColo
 import { normalizeUrl } from '../storage/urls';
 import { StashIndexEntry, TabRecord, GroupRecord, TabColor } from '../storage/types';
 import { restoreStash } from '../tabs';
-import { Favicon, plural, useDismiss, ColorMenu, Wordmark } from '../ui/components';
+import { Favicon, plural, useDismiss, ColorMenu, Wordmark, ConfirmDialog } from '../ui/components';
 import { IconExternal, IconMoveTo, IconPencil, IconTrash } from '../ui/icons';
 import '@fontsource-variable/bricolage-grotesque';
 import '../styles/components.css';
@@ -78,9 +78,9 @@ function MoveToMenu({ sourceStash, tabUrl, allStashes, onClose, onMove, triggerR
                             onMouseEnter={() => { if (!isDuplicate) setActiveIndex(i); }}
                             style={{
                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
-                                padding: '6px 8px', border: 'none', 
+                                padding: '6px 8px', border: 'none',
                                 background: i === activeIndex && !isDuplicate ? 'var(--color-row-hover)' : 'transparent',
-                                cursor: isDuplicate ? 'not-allowed' : 'pointer', borderRadius: '4px', 
+                                cursor: isDuplicate ? 'not-allowed' : 'pointer', borderRadius: '4px',
                                 textAlign: 'left',
                                 color: isDuplicate ? 'var(--color-muted)' : 'var(--color-text)'
                             }}
@@ -116,9 +116,13 @@ export default function Manager() {
     const [renameError, setRenameError] = useState(false);
 
     const [toast, setToast] = useState<{ id: string, message: string, timer: any, undoable: boolean } | null>(null);
-    // const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [moveMenuIndex, setMoveMenuIndex] = useState<number | null>(null);
-    
+
+    // Dialog States
+    const [deleteGroupDialog, setDeleteGroupDialog] = useState<FullStash | null>(null);
+    const [removeTabDialog, setRemoveTabDialog] = useState<{ stash: FullStash, tabIndex: number } | null>(null);
+    const [moveTabDialog, setMoveTabDialog] = useState<{ sourceStash: FullStash, tabIndex: number, targetId: string, targetName: string, targetColor: string } | null>(null);
+
     const triggerRefs = useRef<{ [key: number]: HTMLButtonElement | null }>({});
     const undoBackupRef = useRef<{ index: any } | null>(null);
 
@@ -144,13 +148,17 @@ export default function Manager() {
         fetchStashes();
     }, []);
 
-    const handleDelete = async (id: string) => {
+    const executeDelete = async () => {
+        if (!deleteGroupDialog) return;
+        const id = deleteGroupDialog.id;
+
         const indexBackup = await chrome.storage.sync.get('index');
         undoBackupRef.current = { index: indexBackup.index };
 
         await deleteStash(id, true);
         setStashes(prev => prev.filter(s => s.id !== id));
         if (selectedStash?.id === id) setSelectedStash(null);
+        setDeleteGroupDialog(null);
 
         if (toast) clearTimeout(toast.timer);
         const timer = setTimeout(async () => {
@@ -165,9 +173,18 @@ export default function Manager() {
     const handleUndo = async () => {
         if (!toast || !toast.undoable || !undoBackupRef.current) return;
         clearTimeout(toast.timer);
-        
+
         await chrome.storage.sync.set({ index: undoBackupRef.current.index });
         await fetchStashes();
+
+        // Refresh selectedStash view if open
+        if (selectedStash) {
+            const reloaded = await loadStash(selectedStash.id).catch(() => null);
+            if (reloaded) {
+                setSelectedStash(prev => prev ? { ...prev, tabs: reloaded.tabs, tabCount: reloaded.tabs.length } : null);
+            }
+        }
+
         setToast(null);
         undoBackupRef.current = null;
     };
@@ -189,41 +206,76 @@ export default function Manager() {
         setRenameError(false);
     };
 
-    const handleRemoveTab = async (stash: FullStash, tabIndex: number) => {
+    const executeRemoveTab = async () => {
+        if (!removeTabDialog) return;
+        const { stash, tabIndex } = removeTabDialog;
+        const indexBackup = await chrome.storage.sync.get('index');
+        undoBackupRef.current = { index: indexBackup.index };
+
         const updatedTabs = stash.tabs.filter((_, i) => i !== tabIndex);
         await saveStash(stash.name, updatedTabs, stash.groups, stash.id);
         await fetchStashes();
         setSelectedStash({ ...stash, tabs: updatedTabs, tabCount: updatedTabs.length });
+        setRemoveTabDialog(null);
+
+        if (toast) clearTimeout(toast.timer);
+        setToast({ id: 'remove', message: 'Tab removed', timer: setTimeout(() => setToast(null), 4000), undoable: true });
     };
 
-    const handleMoveTabExec = async (stash: FullStash, tabIndex: number, targetStashId: string) => {
+    const confirmMoveTab = async (targetId: string) => {
+        if (!selectedStash || moveMenuIndex === null) return;
+        const sourceStash = selectedStash;
+        const tabIndex = moveMenuIndex;
+        setMoveMenuIndex(null);
+
+        if (targetId === 'new') {
+            const targetName = await getNextDefaultName();
+            const newId = await saveStash(targetName, [], sourceStash.groups);
+            await fetchStashes();
+            setMoveTabDialog({ sourceStash, tabIndex, targetId: newId, targetName, targetColor: 'grey' });
+        } else {
+            const targetStash = stashes.find(s => s.id === targetId);
+            if (targetStash) {
+                setMoveTabDialog({ sourceStash, tabIndex, targetId: targetStash.id, targetName: targetStash.name, targetColor: targetStash.color });
+            }
+        }
+    };
+
+    const executeMoveTab = async () => {
+        if (!moveTabDialog) return;
+        const { sourceStash, tabIndex, targetId, targetName } = moveTabDialog;
+
         const indexBackup = await chrome.storage.sync.get('index');
         undoBackupRef.current = { index: indexBackup.index };
 
-        const result = await moveTab(stash.id, targetStashId, tabIndex);
-        
+        const result = await moveTab(sourceStash.id, targetId, tabIndex);
+
         if (result.status === 'duplicate') {
+            setMoveTabDialog(null);
             if (toast) clearTimeout(toast.timer);
-            setToast({ 
-                id: 'move-err', 
-                message: `Already in ${result.targetName}`, 
+            setToast({
+                id: 'move-err',
+                message: `Already in ${targetName}`,
                 timer: setTimeout(() => setToast(null), 4000),
                 undoable: false
             });
-            setMoveMenuIndex(null);
             return;
+        }
+
+        if (result.status === 'error') {
+            throw new Error(result.message); // letting ConfirmDialog catch and display it
         }
 
         if (result.status === 'moved') {
             await fetchStashes();
-            const updatedSourceStash = await loadStash(stash.id);
+            const updatedSourceStash = await loadStash(sourceStash.id);
             setSelectedStash(prev => prev ? { ...prev, tabs: updatedSourceStash.tabs, tabCount: updatedSourceStash.tabs.length } : null);
-            setMoveMenuIndex(null);
-            
+            setMoveTabDialog(null);
+
             if (toast) clearTimeout(toast.timer);
-            setToast({ 
-                id: 'move', 
-                message: `Moved to ${result.targetName}`, 
+            setToast({
+                id: 'move',
+                message: `Moved to ${targetName}`,
                 timer: setTimeout(() => setToast(null), 4000),
                 undoable: true
             });
@@ -253,7 +305,7 @@ export default function Manager() {
             <div className="page">
                 <div style={{ paddingTop: '20px' }}>
                     <button className="link link--back" onClick={() => setSelectedStash(null)}>
-                        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+                        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg>
                         Back to groups
                     </button>
                 </div>
@@ -285,7 +337,7 @@ export default function Manager() {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                         <ColorMenu value={selectedStash.color} onChange={handleColorSelect} />
-                        <button className="action action--outline action--danger" onClick={() => handleDelete(selectedStash.id)}>
+                        <button className="action action--outline action--danger" onClick={() => setDeleteGroupDialog(selectedStash)}>
                             <IconTrash />
                             <span>Delete group</span>
                         </button>
@@ -313,11 +365,11 @@ export default function Manager() {
                                             <IconExternal />
                                             <span className="action__label">Open</span>
                                         </button>
-                                        <button 
-                                            className="action action--ghost action--sm" 
+                                        <button
+                                            className="action action--ghost action--sm"
                                             ref={el => triggerRefs.current[i] = el}
                                             onClick={() => setMoveMenuIndex(moveMenuIndex === i ? null : i)}
-                                            title="Move to..." 
+                                            title="Move to..."
                                             aria-label="Move to..."
                                             aria-haspopup="menu"
                                             aria-expanded={moveMenuIndex === i}
@@ -325,19 +377,19 @@ export default function Manager() {
                                             <IconMoveTo />
                                             <span className="action__label">Move to&hellip;</span>
                                         </button>
-                                        <button className="action action--ghost action--sm action--danger" onClick={() => handleRemoveTab(selectedStash, i)} title="Remove" aria-label="Remove">
+                                        <button className="action action--ghost action--sm action--danger" onClick={() => setRemoveTabDialog({ stash: selectedStash, tabIndex: i })} title="Remove" aria-label="Remove">
                                             <IconTrash />
                                             <span className="action__label">Remove</span>
                                         </button>
-                                        
+
                                         {moveMenuIndex === i && (
-                                            <MoveToMenu 
-                                                sourceStash={selectedStash} 
+                                            <MoveToMenu
+                                                sourceStash={selectedStash}
                                                 tabUrl={tab.u}
-                                                allStashes={stashes} 
+                                                allStashes={stashes}
                                                 triggerRef={{ current: triggerRefs.current[i] }}
-                                                onClose={() => setMoveMenuIndex(null)} 
-                                                onMove={(targetId: string) => handleMoveTabExec(selectedStash, i, targetId)} 
+                                                onClose={() => setMoveMenuIndex(null)}
+                                                onMove={(targetId: string) => confirmMoveTab(targetId)}
                                             />
                                         )}
                                     </div>
@@ -346,6 +398,68 @@ export default function Manager() {
                         })
                     )}
                 </div>
+
+                <ConfirmDialog
+                    open={!!removeTabDialog}
+                    title="Remove this tab?"
+                    tone="danger"
+                    confirmLabel="Remove tab"
+                    onConfirm={executeRemoveTab}
+                    onCancel={() => setRemoveTabDialog(null)}
+                >
+                    {removeTabDialog && (
+                        <>
+                            It will be removed from {removeTabDialog.stash.name}.
+                            <div className="dialog__item">
+                                <Favicon url={removeTabDialog.stash.tabs[removeTabDialog.tabIndex].u} size={16} />
+                                <div className="dialog__item-text">
+                                    <div className="dialog__item-title">{removeTabDialog.stash.tabs[removeTabDialog.tabIndex].t}</div>
+                                    <div className="dialog__item-sub">{formatUrl(removeTabDialog.stash.tabs[removeTabDialog.tabIndex].u)}</div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </ConfirmDialog>
+
+                <ConfirmDialog
+                    open={!!deleteGroupDialog}
+                    title={`Delete ${deleteGroupDialog?.name.length! > 30 ? deleteGroupDialog?.name.slice(0, 30) + '...' : deleteGroupDialog?.name}?`}
+                    tone="danger"
+                    confirmLabel="Delete group"
+                    onConfirm={executeDelete}
+                    onCancel={() => setDeleteGroupDialog(null)}
+                >
+                    {deleteGroupDialog && (
+                        <>
+                            Its {plural(deleteGroupDialog.tabCount, "tab")} will be removed from your saved groups. You can undo this for 10 seconds.
+                        </>
+                    )}
+                </ConfirmDialog>
+
+                <ConfirmDialog
+                    open={!!moveTabDialog}
+                    title={`Move this tab to ${moveTabDialog?.targetName}?`}
+                    tone="primary"
+                    confirmLabel="Move tab"
+                    onConfirm={executeMoveTab}
+                    onCancel={() => setMoveTabDialog(null)}
+                >
+                    {moveTabDialog && (
+                        <>
+                            <div className="dialog__item" style={{ marginBottom: '8px' }}>
+                                <Favicon url={moveTabDialog.sourceStash.tabs[moveTabDialog.tabIndex].u} size={16} />
+                                <div className="dialog__item-text">
+                                    <div className="dialog__item-title">{moveTabDialog.sourceStash.tabs[moveTabDialog.tabIndex].t}</div>
+                                    <div className="dialog__item-sub">{formatUrl(moveTabDialog.sourceStash.tabs[moveTabDialog.tabIndex].u)}</div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-muted)' }}>
+                                From <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: `var(--group-${moveTabDialog.sourceStash.color})` }} /> {moveTabDialog.sourceStash.name}
+                                to <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: `var(--group-${moveTabDialog.targetColor})` }} /> {moveTabDialog.targetName}
+                            </div>
+                        </>
+                    )}
+                </ConfirmDialog>
             </div>
         );
     }
@@ -378,7 +492,7 @@ export default function Manager() {
                             <div className="group-card__preview">
                                 {stash.tabs.length === 0 ? (
                                     <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--color-muted)', fontSize: '13px' }}>
-                                        No tabs yet<br/><span style={{ fontSize: '11px' }}>Add tabs from the popup or context menu.</span>
+                                        No tabs yet<br /><span style={{ fontSize: '11px' }}>Add tabs from the popup or context menu.</span>
                                     </div>
                                 ) : (
                                     stash.tabs.slice(0, 3).map((tab, i) => {
@@ -404,7 +518,7 @@ export default function Manager() {
                                 {stash.tabs.length > 0 && (
                                     <div onClick={e => e.stopPropagation()}>
                                         <button className="btn-soft" style={{ flexShrink: 0 }} onClick={() => restoreStash(stash.id, 'current')}>Open</button>
-                                    </div> 
+                                    </div>
                                 )}
                             </div>
                         </article>
@@ -415,7 +529,23 @@ export default function Manager() {
             {toast && (
                 <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-text)', color: 'var(--color-page)', padding: '10px 16px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000 }}>
                     <span>{toast.message}</span>
-                    {toast.undoable && <button className="action-btn" style={{ color: 'var(--color-accent-tint-hover)', fontWeight: 600 }} onClick={handleUndo}>Undo</button>}
+                    {toast.undoable && (
+                        <button
+                            onClick={handleUndo}
+                            style={{
+                                background: 'var(--color-page)',
+                                color: 'var(--color-text)',
+                                border: 'none',
+                                padding: '4px 10px',
+                                borderRadius: '4px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Undo
+                        </button>
+                    )}
                 </div>
             )}
         </div>
