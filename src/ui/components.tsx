@@ -202,3 +202,77 @@ export function ColorMenu({ value, onChange, compact }: { value: TabColor, onCha
         </div>
     );
 }
+
+export function ConfirmDialog({ open, title, tone = 'primary', confirmLabel, onConfirm, onCancel, children }: any) {
+    const dialogRef = useRef<HTMLDialogElement>(null);
+    const [isBusy, setIsBusy] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+    useEffect(() => {
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+        if (open) {
+            dialog.showModal();
+            setErrorMsg(null);
+            setIsBusy(false);
+        } else {
+            dialog.close();
+        }
+    }, [open]);
+
+    useEffect(() => {
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+        const handleCancel = (e: Event) => {
+            e.preventDefault();
+            if (!isBusy) onCancel();
+        };
+        dialog.addEventListener('cancel', handleCancel);
+        return () => dialog.removeEventListener('cancel', handleCancel);
+    }, [onCancel, isBusy]);
+
+    const handleBackdropClick = (e: React.MouseEvent) => {
+        if (e.target === dialogRef.current && !isBusy) {
+            onCancel();
+        }
+    };
+
+    const handleConfirmClick = async () => {
+        setIsBusy(true);
+        setErrorMsg(null);
+        try {
+            await onConfirm();
+        } catch (err: any) {
+            setErrorMsg(err.message || 'An error occurred.');
+            setIsBusy(false);
+        }
+    };
+
+    return (
+        <dialog ref={dialogRef} className="dialog" onClick={handleBackdropClick} aria-labelledby="dialog-title" aria-describedby="dialog-desc">
+            <div className="dialog__body">
+                <h2 id="dialog-title" className="dialog__title">{title}</h2>
+                <div id="dialog-desc" className="dialog__text">{children}</div>
+                {errorMsg && <div className="dialog__error">{errorMsg}</div>}
+            </div>
+            <div className="dialog__actions">
+                <button 
+                    className="action action--outline" 
+                    onClick={onCancel} 
+                    disabled={isBusy}
+                    autoFocus={tone === 'danger'}
+                >
+                    Cancel
+                </button>
+                <button 
+                    className={tone === 'danger' ? 'action action--solid-danger' : 'btn-solid'} 
+                    onClick={handleConfirmClick} 
+                    disabled={isBusy}
+                    autoFocus={tone === 'primary'}
+                >
+                    {confirmLabel}
+                </button>
+            </div>
+        </dialog>
+    );
+}
