@@ -1,15 +1,10 @@
-import React, { useState, useEffect, MouseEvent } from 'react';
+import { useState, useEffect, MouseEvent } from 'react';
 import { captureWindow, closeTabsSafely, restoreStash } from '../tabs';
 import { saveStash, loadIndex, getNextDefaultName, setGroupColor } from '../storage';
 import { StashIndexEntry, TabRecord, TabColor } from '../storage/types';
-import { TriStateCheckbox, plural } from '../ui/components';
+import { TriStateCheckbox, plural, ColorMenu, Wordmark } from '../ui/components';
+import '@fontsource-variable/bricolage-grotesque';
 import '../styles/components.css';
-
-function formatUrl(url: string) {
-    let clean = url.replace(/^https?:\/\//, '').replace(/^www\./, '');
-    if (clean.endsWith('/')) clean = clean.slice(0, -1);
-    return clean;
-}
 
 const COLORS: TabColor[] = ["blue", "red", "yellow", "green", "pink", "cyan", "orange", "grey"];
 
@@ -139,9 +134,12 @@ export default function Popup() {
       <header className="popup-header" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="var(--color-accent)"><rect x="2" y="2" width="12" height="4" rx="2"/><rect x="2" y="7" width="10" height="4" rx="2"/><rect x="2" y="12" width="8" height="4" rx="2"/></svg>
-          <span style={{ fontSize: '15px', fontWeight: 600 }}>TabStash</span>
+          <Wordmark size="sm" />
         </div>
-        <a href="/manager.html" target="_blank" className="text-link">Open manager</a>
+        <a href="/manager.html" target="_blank" className="link link--external" style={{ marginRight: '-8px' }}>
+            Open manager
+            <svg viewBox="0 0 24 24"><path d="M7 17L17 7M17 7H7M17 7V17"/></svg>
+        </a>
       </header>
 
       <div className="popup-saveto" style={{ padding: '0 16px 12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -159,21 +157,9 @@ export default function Popup() {
         </div>
         
         {saveTarget === 'new' && (
-          <div>
-              <input type="text" className="text-input" placeholder="Group name" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
-              <div style={{ display: 'flex', gap: '8px', paddingLeft: '2px', marginTop: '8px' }}>
-                  {COLORS.map(c => (
-                      <button 
-                          key={c}
-                          onClick={() => setNewGroupColor(c)}
-                          style={{
-                              width: '16px', height: '16px', borderRadius: '50%', background: `var(--group-${c})`,
-                              border: 'none', cursor: 'pointer', padding: 0,
-                              boxShadow: newGroupColor === c ? '0 0 0 2px var(--color-page), 0 0 0 4px var(--color-text)' : 'none'
-                          }}
-                      />
-                  ))}
-              </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input type="text" className="text-input" placeholder="Group name" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} style={{ flex: 1 }} />
+              <ColorMenu value={newGroupColor} onChange={setNewGroupColor} compact={true} />
           </div>
         )}
       </div>
@@ -207,19 +193,7 @@ export default function Popup() {
             {selectedTabs.size} of {plural(windowTabs.length, 'tab')} selected
           </span>
           {selectedTabs.size > 0 && (
-            <button
-              onClick={() => setSelectedTabs(new Set())}
-              className="btn-clear"
-              style={{
-                fontSize: '12px', fontWeight: 500, color: 'var(--color-accent)',
-                background: 'transparent', border: 'none', padding: '3px 8px',
-                borderRadius: '4px', cursor: 'pointer', transition: 'background-color 120ms ease'
-              }}
-              onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--color-accent-soft)'}
-              onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
-            >
-              Clear
-            </button>
+             <button onClick={() => setSelectedTabs(new Set())} className="link">Clear</button>
           )}
         </div>
       </div>
@@ -243,7 +217,7 @@ export default function Popup() {
                 <img src={faviconUrl} alt="" className={isGithub ? 'favicon--mono' : ''} style={{ width: '16px', height: '16px' }} />
                 <div className="tab-list-content">
                   <div className="tab-list-title">{tab.t}</div>
-                  <div className="tab-list-domain">{formatUrl(tab.u)}</div>
+                  <div className="tab-list-domain">{hostname.replace(/^www\./, '')}</div>
                 </div>
               </label>
             );
@@ -277,7 +251,10 @@ export default function Popup() {
             ))}
             {stashes.length > 2 && (
               <div style={{ marginTop: '8px' }}>
-                <a href="/manager.html" target="_blank" className="text-link" style={{ fontSize: '12px' }}>See all in manager</a>
+                <a href="/manager.html" target="_blank" className="link link--forward" style={{ paddingLeft: 0, paddingRight: 0 }}>
+                    See all in manager
+                    <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </a>
               </div>
             )}
           </div>

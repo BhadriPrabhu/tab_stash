@@ -1,82 +1,14 @@
-import '../styles/components.css';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { TabColor } from '../storage/types';
+import { IconChevronDown } from './icons';
 
-export function Button({ variant = 'solid', children, onClick, className = '', disabled }: any) {
-  const btnClass = variant === 'solid' ? 'btn-solid' : variant === 'soft' ? 'btn-soft' : 'action-btn';
-  
-  return (
-    <button className={`btn ${btnClass} ${className}`} onClick={onClick} disabled={disabled}>
-      {children}
-    </button>
-  );
-}
-
-export function TextInput({ placeholder, value, onChange }: any) {
-  return (
-    <input 
-      type="text" 
-      className="text-input" 
-      placeholder={placeholder} 
-      value={value} 
-      onChange={onChange} 
-    />
-  );
-}
-
-export function SiteRow({ domain, url, groupColor = 'grey' }: { domain: string, url: string, groupColor?: string }) {
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-  return (
-    <div className="card-site-row" style={{ borderColor: `var(--group-${groupColor}-border)` }}>
-      <img src={faviconUrl} alt="" className="site-row-favicon" />
-      <div className="site-row-content">
-        <span className="site-row-domain">{domain}</span>
-        <span className="site-row-url">{url.replace('https://', '')}</span>
-      </div>
-    </div>
-  );
-}
-
-export function GroupCard({ group }: { group: any }) {
-  // Fallback to grey if mock data doesn't have a color yet
-  const colorName = group.color || 'grey';
-  
-  return (
-    <div className="stash-card">
-      {/* The 3px solid color bar */}
-      <div className="card-color-bar" style={{ background: `var(--group-${colorName})` }}></div>
-      
-      {/* The tinted top area */}
-      <div 
-        className={`card-top ${group.tabs.length === 0 ? 'empty-state' : ''}`}
-        style={{ background: `var(--group-${colorName}-tint)` }}
-      >
-        {group.tabs.length === 0 ? (
-          <>
-            <div>No tabs yet</div>
-            <div style={{ fontSize: '11px' }}>Add tabs from the popup or context menu.</div>
-          </>
-        ) : (
-          group.tabs.map((tab: any, i: number) => (
-            <SiteRow key={i} domain={tab.domain} url={tab.u} groupColor={colorName} />
-          ))
-        )}
-      </div>
-      
-      <div className="card-bottom">
-        <div>
-          <div className="card-title-wrapper">
-            {/* The 10px footer dot */}
-            <div className="card-color-dot" style={{ background: `var(--group-${colorName})` }}></div>
-            <div className="card-title">{group.name}</div>
-          </div>
-          <div className="card-count">{group.tabCount} tabs</div>
-        </div>
-        {group.tabs.length > 0 && (
-          <Button variant="soft">Open</Button>
-        )}
-      </div>
-    </div>
-  );
+export function Wordmark({ size = 'default' }: { size?: 'sm' | 'default' }) {
+    return (
+        <span className={`wordmark ${size === 'sm' ? 'wordmark--sm' : ''}`}>
+            <span className="wordmark__tab">Tab</span>
+            <span className="wordmark__stash">Stash</span>
+        </span>
+    );
 }
 
 export function plural(n: number, word: string) {
@@ -133,4 +65,140 @@ export function TriStateCheckbox({ checked, indeterminate, onChange, label }: an
       <span style={{ fontSize: '13px', fontWeight: 500 }}>{label}</span>
     </label>
   );
+}
+
+export function useDismiss(open: boolean, onClose: () => void, refs: React.RefObject<HTMLElement>[]) {
+    useEffect(() => {
+        if (!open) return;
+
+        const handlePointerDown = (e: PointerEvent) => {
+            const target = e.target as Node;
+            if (refs.every(ref => ref.current && !ref.current.contains(target))) {
+                onClose();
+            }
+        };
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+                if (refs[0]?.current) {
+                    refs[0].current.focus();
+                }
+            }
+        };
+
+        const handleBlur = () => {
+            if (!document.hasFocus()) onClose();
+        };
+
+        const handleScroll = (e: Event) => {
+            const target = e.target as Node;
+            if (refs.some(ref => ref.current && ref.current.contains(target))) return;
+            onClose();
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown, true);
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('blur', handleBlur);
+        window.addEventListener('scroll', handleScroll, true);
+        window.addEventListener('resize', onClose);
+
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown, true);
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('blur', handleBlur);
+            window.removeEventListener('scroll', handleScroll, true);
+            window.removeEventListener('resize', onClose);
+        };
+    }, [open, onClose, refs]);
+}
+
+const COLORS: { id: TabColor, name: string }[] = [
+    { id: "blue", name: "Blue" },
+    { id: "red", name: "Red" },
+    { id: "yellow", name: "Yellow" },
+    { id: "green", name: "Green" },
+    { id: "pink", name: "Pink" },
+    { id: "cyan", name: "Cyan" },
+    { id: "orange", name: "Orange" },
+    { id: "grey", name: "Grey" },
+];
+
+export function ColorMenu({ value, onChange, compact }: { value: TabColor, onChange: (c: TabColor) => void, compact?: boolean }) {
+    const [open, setOpen] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    
+    useDismiss(open, () => setOpen(false), [triggerRef, menuRef]);
+
+    useEffect(() => {
+        if (!open) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActiveIndex(i => (i + 1) % COLORS.length);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActiveIndex(i => (i - 1 + COLORS.length) % COLORS.length);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                onChange(COLORS[activeIndex].id);
+                setOpen(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [open, activeIndex, onChange]);
+
+    return (
+        <div style={{ position: 'relative' }}>
+            <button 
+                ref={triggerRef}
+                onClick={() => { setOpen(!open); setActiveIndex(COLORS.findIndex(c => c.id === value)); }}
+                aria-label={compact ? "Group colour" : undefined}
+                className="action action--outline"
+            >
+                <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: `var(--group-${value})` }} />
+                {!compact && <span>Color</span>}
+                <IconChevronDown size={12} />
+            </button>
+
+            {open && (
+                <div ref={menuRef} role="listbox" style={{
+                    position: 'absolute', top: '100%', right: 0, marginTop: '4px', zIndex: 100,
+                    width: '180px',
+                    background: 'var(--color-card)', border: '1px solid var(--color-border)',
+                    borderRadius: '8px', boxShadow: '0 4px 12px rgba(34,32,28,.12)',
+                    padding: '4px', display: 'flex', flexDirection: 'column', gap: '2px'
+                }}>
+                    {COLORS.map((c, i) => (
+                        <button
+                            key={c.id}
+                            role="option"
+                            aria-selected={value === c.id}
+                            onClick={() => { onChange(c.id); setOpen(false); }}
+                            onMouseEnter={() => setActiveIndex(i)}
+                            style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                height: '36px', padding: '0 10px', border: 'none', 
+                                background: i === activeIndex ? 'var(--color-row-hover)' : 'transparent',
+                                cursor: 'pointer', borderRadius: '4px'
+                            }}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: `var(--group-${c.id})` }} />
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>{c.name}</span>
+                            </div>
+                            {value === c.id && (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }
