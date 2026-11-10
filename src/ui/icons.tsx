@@ -45,3 +45,19 @@ export const IconChevronDown = ({ size = 16 }: { size?: number }) => (
     <path d="m6 9 6 6 6-6"/>
   </svg>
 );
+
+export const IconDownload = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} {...svgProps}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <path d="m7 10 5 5 5-5"/>
+    <path d="M12 15V3"/>
+  </svg>
+);
+
+export const IconUpload = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} {...svgProps}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <path d="m17 8-5-5-5 5"/>
+    <path d="M12 3v12"/>
+  </svg>
+);

@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { loadIndex, loadStash, deleteStash, renameStash, saveStash, setGroupColor, getNextDefaultName, moveTab } from '../storage';
 import { normalizeUrl } from '../storage/urls';
 import { StashIndexEntry, TabRecord, GroupRecord, TabColor } from '../storage/types';
+import { exportData, importData } from '../storage/backup';
 import { restoreStash } from '../tabs';
 import { Favicon, plural, useDismiss, ColorMenu, Wordmark, ConfirmDialog } from '../ui/components';
-import { IconExternal, IconMoveTo, IconPencil, IconTrash } from '../ui/icons';
+import { IconExternal, IconMoveTo, IconPencil, IconTrash, IconDownload, IconUpload } from '../ui/icons';
 import '@fontsource-variable/bricolage-grotesque';
 import '../styles/components.css';
 
@@ -104,6 +105,8 @@ function formatUrl(url: string) {
     return clean;
 }
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default function Manager() {
     const [stashes, setStashes] = useState<FullStash[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -123,6 +126,11 @@ export default function Manager() {
     const [removeTabDialog, setRemoveTabDialog] = useState<{ stash: FullStash, tabIndex: number } | null>(null);
     const [moveTabDialog, setMoveTabDialog] = useState<{ sourceStash: FullStash, tabIndex: number, targetId: string, targetName: string, targetColor: string } | null>(null);
 
+    // Import/Export States
+    const [isImporting, setIsImporting] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     const triggerRefs = useRef<{ [key: number]: HTMLButtonElement | null }>({});
     const undoBackupRef = useRef<{ index: any } | null>(null);
 
@@ -136,7 +144,9 @@ export default function Manager() {
                     return { ...entry, tabs, groups };
                 })
             );
-            setStashes(fullData.sort((a, b) => b.updatedAt - a.updatedAt));
+            const sorted = fullData.sort((a, b) => b.updatedAt - a.updatedAt);
+            setStashes(sorted);
+            setSelectedStash(prev => prev ? sorted.find(s => s.id === prev.id) || null : null);
         } catch (err: any) {
             setError(err.message || 'Failed to load stashes.');
         } finally {
@@ -146,7 +156,89 @@ export default function Manager() {
 
     useEffect(() => {
         fetchStashes();
+
+        const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+            if (changes.index) {
+                fetchStashes();
+            }
+        };
+        chrome.storage.onChanged.addListener(handleStorageChange);
+        return () => chrome.storage.onChanged.removeListener(handleStorageChange);
     }, []);
+
+    const handleExport = async () => {
+        setIsExporting(true);
+        try {
+            await exportData();
+            if (toast) clearTimeout(toast.timer);
+            setToast({
+                id: 'export',
+                message: 'Backup exported',
+                timer: setTimeout(() => setToast(null), 3000),
+                undoable: false
+            });
+            await delay(3000);
+        } catch (err: any) {
+            if (toast) clearTimeout(toast.timer);
+            setToast({
+                id: 'export-err',
+                message: 'Export failed',
+                timer: setTimeout(() => setToast(null), 3000),
+                undoable: false
+            });
+            await delay(3000);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsImporting(true);
+        try {
+            const res = await importData(file);
+            if (toast) clearTimeout(toast.timer);
+
+            if (res.failed > 0 && res.error) {
+                setToast({
+                    id: 'import-err',
+                    message: `Import error: ${res.error}`,
+                    timer: setTimeout(() => setToast(null), 5000),
+                    undoable: false
+                });
+            } else {
+                let msgParts = [];
+                if (res.added > 0) msgParts.push(`${res.added} added`);
+                if (res.updated > 0) msgParts.push(`${res.updated} updated`);
+                if (res.skippedUpToDate > 0) msgParts.push(`${res.skippedUpToDate} skipped (already up to date)`);
+                if (res.skippedInvalid > 0) msgParts.push(`${res.skippedInvalid} skipped (invalid)`);
+
+                if (msgParts.length === 0) msgParts.push("Nothing imported");
+
+                setToast({
+                    id: 'import',
+                    message: msgParts.join(', '),
+                    timer: setTimeout(() => setToast(null), 5000),
+                    undoable: false
+                });
+            }
+            await fetchStashes();
+            await delay(5000);
+        } catch (err: any) {
+            if (toast) clearTimeout(toast.timer);
+            setToast({
+                id: 'import-err',
+                message: err.message,
+                timer: setTimeout(() => setToast(null), 5000),
+                undoable: false
+            });
+            await delay(5000);
+        } finally {
+            setIsImporting(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
 
     const executeDelete = async () => {
         if (!deleteGroupDialog) return;
@@ -176,14 +268,6 @@ export default function Manager() {
 
         await chrome.storage.sync.set({ index: undoBackupRef.current.index });
         await fetchStashes();
-
-        // Refresh selectedStash view if open
-        if (selectedStash) {
-            const reloaded = await loadStash(selectedStash.id).catch(() => null);
-            if (reloaded) {
-                setSelectedStash(prev => prev ? { ...prev, tabs: reloaded.tabs, tabCount: reloaded.tabs.length } : null);
-            }
-        }
 
         setToast(null);
         undoBackupRef.current = null;
@@ -263,7 +347,7 @@ export default function Manager() {
         }
 
         if (result.status === 'error') {
-            throw new Error(result.message); // letting ConfirmDialog catch and display it
+            throw new Error(result.message);
         }
 
         if (result.status === 'moved') {
@@ -455,7 +539,7 @@ export default function Manager() {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-muted)' }}>
                                 From <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: `var(--group-${moveTabDialog.sourceStash.color})` }} /> {moveTabDialog.sourceStash.name}
-                                to <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: `var(--group-${moveTabDialog.targetColor})` }} /> {moveTabDialog.targetName}
+                                &nbsp;to&nbsp; <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: `var(--group-${moveTabDialog.targetColor})` }} /> {moveTabDialog.targetName}
                             </div>
                         </>
                     )}
@@ -472,7 +556,29 @@ export default function Manager() {
                     <Wordmark />
                 </div>
                 <div className="app-header__actions">
-                    <div style={{ position: 'relative', width: '260px' }}>
+                    <button
+                        className="action action--outline"
+                        onClick={handleExport}
+                        disabled={isExporting}
+                        title="Download a backup file"
+                        aria-label="Export"
+                    >
+                        <IconDownload />
+                        <span className="action__label">{isExporting ? 'Exporting...' : 'Export'}</span>
+                    </button>
+                    <button
+                        className="action action--outline"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isImporting}
+                        title="Restore from a backup file"
+                        aria-label="Import"
+                    >
+                        <IconUpload />
+                        <span className="action__label">{isImporting ? 'Importing...' : 'Import'}</span>
+                    </button>
+                    <input type="file" accept=".json,application/json" style={{ display: 'none' }} ref={fileInputRef} onChange={handleImportFile} />
+
+                    <div className="app-header__search">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '10px', top: '10px' }}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         <input type="text" className="text-input" placeholder="Search groups and tabs" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ paddingLeft: '32px' }} />
                     </div>

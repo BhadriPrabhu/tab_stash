@@ -163,14 +163,14 @@ h1, h2, h3, p {
   border-color: var(--color-border-strong);
   color: var(--color-text);
 }
-.action--outline:hover {
+.action--outline:hover:not(:disabled) {
   background: var(--color-row-hover);
 }
 .action--outline.action--danger {
   color: var(--color-danger);
   border-color: color-mix(in srgb, var(--color-danger) 40%, var(--color-border));
 }
-.action--outline.action--danger:hover {
+.action--outline.action--danger:hover:not(:disabled) {
   background: var(--color-danger-tint);
 }
 .action--solid-danger {
@@ -178,17 +178,17 @@ h1, h2, h3, p {
   border-color: var(--color-danger);
   color: #fff;
 }
-.action--solid-danger:hover {
+.action--solid-danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-danger) 85%, #000);
 }
 .action--ghost {
   color: var(--color-muted);
 }
-.action--ghost:hover {
+.action--ghost:hover:not(:disabled) {
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
-.action--ghost.action--danger:hover {
+.action--ghost.action--danger:hover:not(:disabled) {
   background: var(--color-danger-tint);
   color: var(--color-danger);
 }
@@ -334,6 +334,7 @@ h1, h2, h3, p {
   justify-content: space-between;
   gap: 16px;
   padding: 20px 0 6px;
+  flex-wrap: wrap;
 }
 .app-header__brand {
   display: flex;
@@ -343,7 +344,11 @@ h1, h2, h3, p {
 .app-header__actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+.app-header__search {
+  position: relative;
+  width: 260px;
 }
 .app-summary {
   padding: 0 0 18px;
@@ -502,11 +507,6 @@ h1, h2, h3, p {
   display: flex; 
 }
 
-@media (max-width: 720px) { 
-  .action__label { display: none; } 
-  .tab-row__actions .action { width: 28px; padding: 0; } 
-}
-
 /* =========================================
    POPUP TAB LIST
    ========================================= */
@@ -594,3 +594,17 @@ body:has(dialog[open]) { overflow: hidden; }
 .dialog__item-sub { font-size: 12px; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dialog__error { margin: 10px 0 0; font-size: 12px; color: var(--color-danger); }
 .dialog__actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 18px; }
+
+/* =========================================
+   MEDIA QUERIES
+   ========================================= */
+@media (max-width: 720px) { 
+  .action__label { display: none; } 
+  .tab-row__actions .action { width: 28px; padding: 0; } 
+  .app-header__actions .action { width: 34px; padding: 0; }
+}
+
+@media (max-width: 600px) {
+  .app-header__actions { width: 100%; display: flex; }
+  .app-header__search { flex: 1; width: auto; }
+}
