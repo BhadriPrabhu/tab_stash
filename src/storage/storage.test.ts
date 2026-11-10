@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { chunkPayload, mergeIndexes } from './utils';
-import { saveStash, loadIndex } from './index';
+import { saveStash } from './index';
 import { TabRecord, StashIndex } from './types';
 
 // Mock Chrome API globally

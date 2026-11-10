@@ -1,5 +1,6 @@
 import { StashIndex, StashIndexEntry, TabRecord, GroupRecord, TabColor } from './types';
-import { chunkPayload, getNextColor, mergeIndexes } from './utils';
+import { chunkPayload, getNextColor } from './utils';
+import { normalizeUrl } from './urls';
 
 export async function loadIndex(): Promise<StashIndex> {
   const res = await chrome.storage.sync.get('index');
@@ -157,4 +158,41 @@ export async function deleteStash(id: string, soft = true) {
     if (entry.store === 'sync') await chrome.storage.sync.remove(keys);
     else await chrome.storage.local.remove(keys);
   }
+}
+
+export async function moveTab(fromId: string, toId: string, tabIndex: number): Promise<{ status: 'duplicate' | 'moved' | 'error', message?: string, targetName?: string }> {
+    try {
+        const source = await loadStash(fromId);
+        if (!source.tabs[tabIndex]) return { status: 'error', message: 'Tab not found in source' };
+        
+        const tabToMove = source.tabs[tabIndex];
+        const normalizedMovingUrl = normalizeUrl(tabToMove.u);
+        
+        let targetName = 'New group';
+        let targetGroups = source.groups;
+
+        if (toId === 'new') {
+            targetName = await getNextDefaultName();
+            await saveStash(targetName, [tabToMove], targetGroups);
+        } else {
+            const target = await loadStash(toId);
+            targetName = target.entry.name;
+            
+            // Duplicate Check
+            if (target.tabs.some(t => normalizeUrl(t.u) === normalizedMovingUrl)) {
+                return { status: 'duplicate', targetName };
+            }
+            
+            const updatedTargetTabs = [...target.tabs, tabToMove];
+            await saveStash(target.entry.name, updatedTargetTabs, target.groups, target.entry.id);
+        }
+
+        // Copy succeeded, remove from source
+        const updatedSourceTabs = source.tabs.filter((_, i) => i !== tabIndex);
+        await saveStash(source.entry.name, updatedSourceTabs, source.groups, source.entry.id);
+        
+        return { status: 'moved', targetName };
+    } catch (e: any) {
+        return { status: 'error', message: e.message };
+    }
 }
