@@ -156,7 +156,7 @@ async function _saveStash(name: string, tabs: TabRecord[], groups: GroupRecord[]
     return existingEntry.id;
 }
 
-async function _createGroupWithTabs(name: string, tabs: TabRecord[], groups: GroupRecord[], color?: TabColor, existingId?: string): Promise<string> {
+export async function _createGroupWithTabs(name: string, tabs: TabRecord[], groups: GroupRecord[], color?: TabColor, existingId?: string): Promise<string> {
     const id = existingId || crypto.randomUUID();
     const currentIndex = await loadIndex();
     if (currentIndex.stashes.some(s => s.id === id)) {
