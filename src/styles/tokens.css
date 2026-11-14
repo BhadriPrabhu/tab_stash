@@ -1,5 +1,7 @@
 :root {
   color-scheme: light;
+
+  --font-ui: "Instrument Sans Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   
   --color-page: #f3f3f2;
   --color-card: #ffffff;

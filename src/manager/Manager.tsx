@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { loadIndex, loadStash, deleteStash, renameStash, saveStash, setGroupColor, getNextDefaultName, moveTab } from '../storage';
 import { normalizeUrl } from '../storage/urls';
 import { StashIndexEntry, TabRecord, GroupRecord, TabColor } from '../storage/types';
-import { exportData, importData } from '../storage/backup';
+import { exportData, planImport, applyImport, ImportPlan } from '../storage/backup';
 import { restoreStash } from '../tabs';
 import { Favicon, plural, useDismiss, ColorMenu, Wordmark, ConfirmDialog } from '../ui/components';
 import { IconExternal, IconMoveTo, IconPencil, IconTrash, IconDownload, IconUpload } from '../ui/icons';
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/instrument-sans';
 import '../styles/components.css';
 
 interface FullStash extends StashIndexEntry {
@@ -99,6 +99,109 @@ function MoveToMenu({ sourceStash, tabUrl, allStashes, onClose, onMove, triggerR
     );
 }
 
+function ImportDialog({ plan, onConfirm, onCancel }: { plan: ImportPlan | null, onConfirm: (choice: 'merge' | 'replace' | 'keep') => void, onCancel: () => void }) {
+    const dialogRef = useRef<HTMLDialogElement>(null);
+    const [choice, setChoice] = useState<'merge' | 'replace' | 'keep'>('merge');
+
+    useEffect(() => {
+        if (!dialogRef.current) return;
+        if (plan) {
+            dialogRef.current.showModal();
+            setChoice('merge');
+        } else {
+            dialogRef.current.close();
+        }
+    }, [plan]);
+
+    useEffect(() => {
+        if (!dialogRef.current) return;
+        const handleCancel = (e: Event) => {
+            e.preventDefault();
+            onCancel();
+        };
+        const el = dialogRef.current;
+        el.addEventListener('cancel', handleCancel);
+        return () => el.removeEventListener('cancel', handleCancel);
+    }, [onCancel]);
+
+    const handleBackdropClick = (e: React.MouseEvent) => {
+        if (e.target === dialogRef.current) onCancel();
+    };
+
+    if (!plan) return null;
+
+    const diffItems = plan.items.filter(i => i.status === 'differs');
+    const newCount = plan.items.filter(i => i.status === 'new').length;
+    const sameCount = plan.items.filter(i => i.status === 'same').length;
+
+    let confirmLabel = "Add missing tabs";
+    if (choice === 'replace') confirmLabel = "Replace groups";
+    if (choice === 'keep') confirmLabel = "Import";
+
+    return (
+        <dialog ref={dialogRef} className="dialog" onClick={handleBackdropClick} aria-labelledby="import-title" aria-describedby="import-desc">
+            <div className="dialog__body">
+                <h2 id="import-title" className="dialog__title">Some groups differ from your backup</h2>
+                <p id="import-desc" className="dialog__text" style={{ marginBottom: '16px' }}>Choose what to do with these groups. Nothing has been changed yet.</p>
+                
+                <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                    {diffItems.map((item, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: '6px', background: 'var(--color-row-hover)', minWidth: 0 }}>
+                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0, background: `var(--group-${item.localColor})` }}></div>
+                            <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.localName}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--color-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    Backup has {plural(item.fileTabCount || 0, 'tab')}, you have {item.localTabCount}
+                                    {item.extraHere! > 0 ? ` · ${item.extraHere} only in your copy` : ''}
+                                    {item.nameChanged ? ` · name differs` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <fieldset style={{ margin: 0, padding: 0, border: 'none', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <legend style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px', padding: 0 }}>For these groups</legend>
+                    
+                    <label style={{ display: 'flex', gap: '10px', cursor: 'pointer' }}>
+                        <input type="radio" name="import-choice" value="merge" checked={choice === 'merge'} onChange={() => setChoice('merge')} style={{ marginTop: '2px', accentColor: 'var(--color-accent)' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Add missing tabs from the backup</span>
+                            <span style={{ fontSize: '12px', color: 'var(--color-muted)' }}>Keeps what you have. Nothing is removed.</span>
+                        </div>
+                    </label>
+
+                    <label style={{ display: 'flex', gap: '10px', cursor: 'pointer' }}>
+                        <input type="radio" name="import-choice" value="replace" checked={choice === 'replace'} onChange={() => setChoice('replace')} style={{ marginTop: '2px', accentColor: 'var(--color-accent)' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Replace with the backup version</span>
+                            <span style={{ fontSize: '12px', color: 'var(--color-muted)' }}>Your current version of these groups is overwritten.</span>
+                        </div>
+                    </label>
+
+                    <label style={{ display: 'flex', gap: '10px', cursor: 'pointer' }}>
+                        <input type="radio" name="import-choice" value="keep" checked={choice === 'keep'} onChange={() => setChoice('keep')} style={{ marginTop: '2px', accentColor: 'var(--color-accent)' }} />
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>Keep my current version</span>
+                            <span style={{ fontSize: '12px', color: 'var(--color-muted)' }}>Skip these groups.</span>
+                        </div>
+                    </label>
+                </fieldset>
+
+                <div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--color-muted)' }}>
+                    {newCount} new {plural(newCount, 'group').replace(/^\d+ /, '')} will be added. {sameCount} are already identical.
+                </div>
+            </div>
+            <div className="dialog__actions">
+                <button className="action action--outline" onClick={onCancel} autoFocus={choice === 'replace'}>Cancel</button>
+                <button className={choice === 'replace' ? 'action action--solid-danger' : 'btn-solid'} onClick={() => onConfirm(choice)} autoFocus={choice !== 'replace'}>
+                    {confirmLabel}
+                </button>
+            </div>
+        </dialog>
+    );
+}
+
 function formatUrl(url: string) {
     let clean = url.replace(/^https?:\/\//, '').replace(/^www\./, '');
     if (clean.endsWith('/')) clean = clean.slice(0, -1);
@@ -121,18 +224,22 @@ export default function Manager() {
     const [toast, setToast] = useState<{ id: string, message: string, timer: any, undoable: boolean } | null>(null);
     const [moveMenuIndex, setMoveMenuIndex] = useState<number | null>(null);
 
-    // Dialog States
     const [deleteGroupDialog, setDeleteGroupDialog] = useState<FullStash | null>(null);
     const [removeTabDialog, setRemoveTabDialog] = useState<{ stash: FullStash, tabIndex: number } | null>(null);
     const [moveTabDialog, setMoveTabDialog] = useState<{ sourceStash: FullStash, tabIndex: number, targetId: string, targetName: string, targetColor: string } | null>(null);
+    const [importPlanDialog, setImportPlanDialog] = useState<ImportPlan | null>(null);
 
-    // Import/Export States
     const [isImporting, setIsImporting] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const triggerRefs = useRef<{ [key: number]: HTMLButtonElement | null }>({});
-    const undoBackupRef = useRef<{ index: any } | null>(null);
+    
+    const undoBackupRef = useRef<{ 
+        index?: any,
+        previousStates?: Map<string, { entry: StashIndexEntry, tabs: TabRecord[], groups: GroupRecord[] }>,
+        addedIds?: string[]
+    } | null>(null);
 
     const fetchStashes = async () => {
         try {
@@ -171,21 +278,11 @@ export default function Manager() {
         try {
             await exportData();
             if (toast) clearTimeout(toast.timer);
-            setToast({
-                id: 'export',
-                message: 'Backup exported',
-                timer: setTimeout(() => setToast(null), 3000),
-                undoable: false
-            });
+            setToast({ id: 'export', message: 'Backup exported', timer: setTimeout(() => setToast(null), 3000), undoable: false });
             await delay(3000);
         } catch (err: any) {
             if (toast) clearTimeout(toast.timer);
-            setToast({
-                id: 'export-err',
-                message: 'Export failed',
-                timer: setTimeout(() => setToast(null), 3000),
-                undoable: false
-            });
+            setToast({ id: 'export-err', message: 'Export failed', timer: setTimeout(() => setToast(null), 3000), undoable: false });
             await delay(3000);
         } finally {
             setIsExporting(false);
@@ -197,47 +294,81 @@ export default function Manager() {
         if (!file) return;
         setIsImporting(true);
         try {
-            const res = await importData(file);
-            if (toast) clearTimeout(toast.timer);
+            const text = await file.text();
+            const plan = await planImport(text, stashes);
 
+            if (!plan.ok) {
+                if (toast) clearTimeout(toast.timer);
+                setToast({ id: 'import-err', message: plan.error || 'Import failed', timer: setTimeout(() => setToast(null), 5000), undoable: false });
+                setIsImporting(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                return;
+            }
+
+            const differs = plan.items.filter(i => i.status === 'differs');
+            if (differs.length > 0) {
+                setImportPlanDialog(plan); 
+            } else {
+                await executeImportPlan(plan, 'merge'); 
+            }
+        } catch (err: any) {
+            if (toast) clearTimeout(toast.timer);
+            setToast({ id: 'import-err', message: err.message, timer: setTimeout(() => setToast(null), 5000), undoable: false });
+            setIsImporting(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const executeImportPlan = async (plan: ImportPlan, choice: 'merge' | 'replace' | 'keep') => {
+        setImportPlanDialog(null);
+        try {
+            const res = await applyImport(plan, choice);
+            
             if (res.failed > 0 && res.error) {
-                setToast({
-                    id: 'import-err',
-                    message: `Import error: ${res.error}`,
-                    timer: setTimeout(() => setToast(null), 5000),
-                    undoable: false
-                });
+                if (toast) clearTimeout(toast.timer);
+                setToast({ id: 'import-err', message: `Import error: ${res.error}`, timer: setTimeout(() => setToast(null), 5000), undoable: false });
             } else {
                 let msgParts = [];
                 if (res.added > 0) msgParts.push(`${res.added} added`);
-                if (res.updated > 0) msgParts.push(`${res.updated} updated`);
-                if (res.skippedUpToDate > 0) msgParts.push(`${res.skippedUpToDate} skipped (already up to date)`);
-                if (res.skippedInvalid > 0) msgParts.push(`${res.skippedInvalid} skipped (invalid)`);
+                if (res.restored > 0) {
+                    const restoredTabs = plan.items.filter(i => i.status === 'differs').reduce((acc, curr) => acc + (curr.missingHere || 0), 0);
+                    msgParts.push(`${res.restored} restored (${plural(restoredTabs, 'tab')} added)`);
+                }
+                if (res.replaced > 0) msgParts.push(`${res.replaced} replaced`);
+                if (res.unchanged > 0) msgParts.push(`${res.unchanged} unchanged`);
+                if (res.kept > 0) msgParts.push(`${res.kept} kept as it was`);
+                if (res.invalid > 0) msgParts.push(`${res.invalid} invalid`);
+                
+                if (msgParts.length === 0) msgParts.push("Nothing to import. Your groups already match this backup.");
+                
+                const hasChanges = res.added > 0 || res.restored > 0 || res.replaced > 0;
+                
+                if (hasChanges) {
+                    undoBackupRef.current = { previousStates: res.previousStates, addedIds: res.addedIds };
+                }
 
-                if (msgParts.length === 0) msgParts.push("Nothing imported");
-
-                setToast({
-                    id: 'import',
-                    message: msgParts.join(', '),
-                    timer: setTimeout(() => setToast(null), 5000),
-                    undoable: false
+                if (toast) clearTimeout(toast.timer);
+                setToast({ 
+                    id: 'import', 
+                    message: msgParts.join(', '), 
+                    timer: setTimeout(() => { setToast(null); undoBackupRef.current = null; }, 15000), 
+                    undoable: hasChanges 
                 });
             }
             await fetchStashes();
-            await delay(5000);
         } catch (err: any) {
             if (toast) clearTimeout(toast.timer);
-            setToast({
-                id: 'import-err',
-                message: err.message,
-                timer: setTimeout(() => setToast(null), 5000),
-                undoable: false
-            });
-            await delay(5000);
+            setToast({ id: 'import-err', message: err.message, timer: setTimeout(() => setToast(null), 5000), undoable: false });
         } finally {
             setIsImporting(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
+    };
+
+    const handleImportCancel = () => {
+        setImportPlanDialog(null);
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const executeDelete = async () => {
@@ -266,9 +397,34 @@ export default function Manager() {
         if (!toast || !toast.undoable || !undoBackupRef.current) return;
         clearTimeout(toast.timer);
 
-        await chrome.storage.sync.set({ index: undoBackupRef.current.index });
-        await fetchStashes();
+        if (undoBackupRef.current.index) {
+            await chrome.storage.sync.set({ index: undoBackupRef.current.index });
+        }
+        
+        if (undoBackupRef.current.addedIds) {
+            for (const id of undoBackupRef.current.addedIds) {
+                await deleteStash(id, false); 
+            }
+        }
+        
+        if (undoBackupRef.current.previousStates) {
+            for (const [id, state] of undoBackupRef.current.previousStates.entries()) {
+                const chunks = require('../storage/utils').chunkPayload(state.groups, state.tabs);
+                const payload: Record<string, any> = {};
+                for (const [chunkIndex, data] of Object.entries(chunks)) {
+                    payload[`s_${id}_${chunkIndex}`] = data;
+                }
+                
+                const currentIndex = await loadIndex();
+                const newEntry = { ...state.entry, updatedAt: Date.now() };
+                payload.index = { ...currentIndex, stashes: currentIndex.stashes.map(s => s.id === id ? newEntry : s) };
+                
+                const finalStore = state.entry.store === 'sync' ? chrome.storage.sync : chrome.storage.local;
+                await finalStore.set(payload);
+            }
+        }
 
+        await fetchStashes();
         setToast(null);
         undoBackupRef.current = null;
     };
@@ -631,6 +787,12 @@ export default function Manager() {
                     ))}
                 </main>
             )}
+
+            <ImportDialog 
+                plan={importPlanDialog} 
+                onConfirm={(c) => executeImportPlan(importPlanDialog!, c)} 
+                onCancel={handleImportCancel} 
+            />
 
             {toast && (
                 <div style={{ position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-text)', color: 'var(--color-page)', padding: '10px 16px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000 }}>

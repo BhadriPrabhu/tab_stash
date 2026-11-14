@@ -3,7 +3,7 @@ import { captureWindow, closeTabsSafely, restoreStash } from '../tabs';
 import { createGroupWithTabs, addTabsToGroup, loadIndex, getNextDefaultName } from '../storage';
 import { StashIndexEntry, TabRecord, TabColor } from '../storage/types';
 import { TriStateCheckbox, plural, ColorMenu, Wordmark } from '../ui/components';
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/instrument-sans';
 import '../styles/components.css';
 
 const COLORS: TabColor[] = ["blue", "red", "yellow", "green", "pink", "cyan", "orange", "grey"];
@@ -18,7 +18,7 @@ export default function Popup() {
   const [saveTarget, setSaveTarget] = useState('new');
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupColor, setNewGroupColor] = useState<TabColor>('grey');
-  const [closeAfter, setCloseAfter] = useState(true);
+  const [closeAfter, setCloseAfter] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +105,6 @@ export default function Popup() {
         setTimeout(() => setSaveNotice(null), 5000);
       }
 
-      // Close tabs only if check passed and tabs were actually processed
       if (closeAfter && (addedCount > 0 || duplicateCount > 0)) {
         await closeTabsSafely(targetTabIds);
       }
@@ -120,7 +119,7 @@ export default function Popup() {
           setSaveNotice(`${addedCount} saved, ${duplicateCount} already in ${targetNameDisplay}`);
           setTimeout(() => setSaveNotice(null), 5000);
       } else {
-          setSaveNotice(`${plural(addedCount, 'tab')} saved to ${targetNameDisplay}`);
+          setSaveNotice(`${addedCount} ${plural(addedCount, 'tab')} saved to ${targetNameDisplay}`);
           setTimeout(() => setSaveNotice(null), 5000);
       }
 
